@@ -1,0 +1,148 @@
+// Thai Tax/Law AI Search System - Zero-Hallucination RAG
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      String   @default("user") // user | accountant | lawyer | admin
+  company   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  wallet      Wallet?
+  topUps      TopUpTransaction[]
+  queries     SearchQuery[]
+  usageLogs   UsageLog[]
+}
+
+model Wallet {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance      Int      @default(0) // 1 credit = 1 THB
+  totalTopUp   Int      @default(0)
+  totalUsed    Int      @default(0)
+  bonusCredits Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model TopUpTransaction {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount        Int      // THB
+  credits       Int      // = amount by default
+  bonusCredits  Int      @default(0)
+  status        String   @default("pending") // pending | paid | failed | expired
+  promptPayRef  String?  // e.g. PP-XXXX-XXXX
+  qrPayload     String?  // PromptPay QR payload string
+  paymentMethod String   @default("promptpay")
+  paidAt        DateTime?
+  expiresAt     DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
+// Law document = one PDF source
+model LawDocument {
+  id            String   @id @default(cuid())
+  code          String   @unique // e.g. "RC", "CCC", "DTA-TH-US"
+  title         String
+  shortTitle    String?
+  type          String   // act | decree | regulation | ruling | announcement
+  category      String   // revenue_code | specific_tax | ccc | criminal_corporate | accounting | dta
+  source        String   // rd.go.th | ratchakitcha | krisdika
+  sourceUrl     String?
+  pdfFile       String?
+  pageCount     Int      @default(0)
+  effectiveDate DateTime?
+  publishedAt   DateTime?
+  status        String   @default("in_force") // in_force | repealed | amended
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  chunks LawChunk[]
+}
+
+// Law chunk = a section/clause cut by legal structure (มาตรา / ข้อ / วรรค)
+model LawChunk {
+  id            String   @id @default(cuid())
+  documentId    String
+  document      LawDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sectionNumber String   // e.g. "40", "40(8)"
+  sectionLabel  String   // e.g. "มาตรา 40 (8)"
+  paragraph     String?  // e.g. "(1)", "(2)"
+  content       String   // The actual text of the section
+  pageStart     Int
+  pageEnd       Int?
+  chunkId       String?  // e.g. RD-TAX-SEC-40-8
+  keywords      String?  // comma-separated
+  embedding     String?  // future: vector
+  createdAt     DateTime @default(now())
+
+  @@index([documentId])
+  @@index([sectionNumber])
+}
+
+model SearchQuery {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  query       String
+  mode        String   @default("basic") // basic | deep | audit
+  creditsUsed Int      @default(1)
+  answer      String?
+  status      String   @default("pending") // pending | success | no_match | error
+  chunkCount  Int      @default(0)
+  tokensUsed  Int      @default(0)
+  durationMs  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  citations QueryCitation[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model QueryCitation {
+  id            String   @id @default(cuid())
+  queryId       String
+  query         SearchQuery @relation(fields: [queryId], references: [id], onDelete: Cascade)
+  chunkId       String
+  documentId    String?
+  documentCode  String
+  documentTitle String
+  sectionLabel  String
+  pageStart     Int
+  relevance     Float    @default(0)
+  snippet       String
+  createdAt     DateTime @default(now())
+
+  @@index([queryId])
+}
+
+model UsageLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action      String   // search_basic | search_deep | search_audit | topup | view_doc
+  creditsCost Int      @default(0)
+  metadata    String?  // JSON string
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
