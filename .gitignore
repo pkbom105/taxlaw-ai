@@ -51,4 +51,21 @@ prompt
 
 server.log
 # Skills directory
+/skills/db/custom.db
+db/*.db
+db/*.db-journal
+.env
+.env.local
+
+# Database files (sensitive)
+db/*.db
+db/*.db-journal
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Agent browser / temp
+/tmp/
 /skills/
