@@ -14,6 +14,8 @@ const DIR = process.env.DIR || 'public/ิbook-pdf'
 const WINDOW = Number(process.env.WINDOW || 9000)
 const OVERLAP = Number(process.env.OVERLAP || 400)
 const MAX_WINDOWS = Number(process.env.MAX_WINDOWS || 8)
+// TEXT_FILE: ใช้ข้อความจากไฟล์ (เช่น ผล OCR) แทนการสกัดจาก PDF
+const TEXT_FILE = process.env.TEXT_FILE || ''
 
 async function main() {
   const codes = process.argv.slice(2)
@@ -43,7 +45,9 @@ async function main() {
       continue
     }
 
-    const ext = await extractTextFromBuffer(fs.readFileSync(file), doc.pdfFile)
+    const ext = TEXT_FILE && fs.existsSync(TEXT_FILE)
+      ? { text: fs.readFileSync(TEXT_FILE, 'utf8'), pages: doc.pageCount || 0, kind: 'text', note: 'ข้อความจาก OCR' }
+      : await extractTextFromBuffer(fs.readFileSync(file), doc.pdfFile)
     const th = (ext.text.match(/[\u0E00-\u0E7F]/g) || []).length
     const thPct = Math.round((th / Math.max(ext.text.length, 1)) * 100)
     console.log(`${tag}\n   ไฟล์ ${doc.pdfFile} · ${ext.pages} หน้า · ข้อความ ${ext.text.length} ตัวอักษร · อักษรไทย ${thPct}%`)
