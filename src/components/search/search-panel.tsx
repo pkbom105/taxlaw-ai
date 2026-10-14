@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Search, Sparkles, Loader2, ShieldCheck, AlertTriangle, FileText, ExternalLink, Quote, Coins, Clock, Lightbulb } from 'lucide-react'
 import { toast } from 'sonner'
 import { PRICING_TIERS, type SearchMode, type SearchResult } from '@/lib/types'
+import { useAppState } from '@/lib/app-state'
 
 interface Props {
   balance: number
@@ -26,6 +27,20 @@ const SUGGESTIONS = [
   'บริษัทจำกัดความรับผิดตามกฎหมาย',
   'ทำบัญชีปลอมมีโทษอย่างไร',
 ]
+
+// Literal classes per colour — dynamic `border-${color}-500` never generates with Tailwind JIT
+const MODE_ACTIVE: Record<string, string> = {
+  emerald: 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30',
+  amber: 'border-amber-500 bg-amber-50 dark:bg-amber-950/30',
+  rose: 'border-rose-500 bg-rose-50 dark:bg-rose-950/30',
+  sky: 'border-sky-500 bg-sky-50 dark:bg-sky-950/30',
+  violet: 'border-violet-500 bg-violet-50 dark:bg-violet-950/30',
+  cyan: 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/30',
+  teal: 'border-teal-500 bg-teal-50 dark:bg-teal-950/30',
+  indigo: 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30',
+  lime: 'border-lime-500 bg-lime-50 dark:bg-lime-950/30',
+  fuchsia: 'border-fuchsia-500 bg-fuchsia-50 dark:bg-fuchsia-950/30',
+}
 
 function renderAnswer(answer: string) {
   // Render the simple markdown-like answer
@@ -51,7 +66,21 @@ export function SearchPanel({ balance, onTopUpNeeded, onSearchComplete }: Props)
   const [result, setResult] = React.useState<SearchResult | null>(null)
   const [error, setError] = React.useState<string | null>(null)
 
-  const selectedTier = PRICING_TIERS.find(t => t.mode === mode)!
+  const { options } = useAppState()
+
+  const tiers = React.useMemo(() => {
+    const fromDb = (options.search_mode ?? []).map(o => ({
+      mode: o.value as SearchMode,
+      name: o.label,
+      credits: Number(o.meta?.credits ?? 1),
+      description: String(o.meta?.description ?? ''),
+      features: Array.isArray(o.meta?.features) ? (o.meta?.features as string[]) : [],
+      color: String(o.meta?.color ?? 'emerald'),
+    }))
+    return fromDb.length > 0 ? fromDb : PRICING_TIERS
+  }, [options])
+
+  const selectedTier = tiers.find(t => t.mode === mode) ?? tiers[0]
   const canSearch = query.trim().length >= 5 && balance >= selectedTier.credits && !loading
 
   async function handleSearch() {
@@ -132,7 +161,7 @@ export function SearchPanel({ balance, onTopUpNeeded, onSearchComplete }: Props)
       <CardContent className="space-y-4">
         {/* Mode selection */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-          {PRICING_TIERS.map((tier) => {
+          {tiers.map((tier) => {
             const isActive = mode === tier.mode
             return (
               <button
@@ -140,7 +169,7 @@ export function SearchPanel({ balance, onTopUpNeeded, onSearchComplete }: Props)
                 onClick={() => setMode(tier.mode)}
                 className={`text-left p-3 rounded-lg border-2 transition-all ${
                   isActive
-                    ? `border-${tier.color}-500 bg-${tier.color}-50 dark:bg-${tier.color}-950/30`
+                    ? (MODE_ACTIVE[tier.color] ?? MODE_ACTIVE.emerald)
                     : 'border-border hover:border-muted-foreground/50 bg-background'
                 }`}
               >

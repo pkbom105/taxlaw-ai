@@ -12,6 +12,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Wallet, QrCode, Copy, CheckCircle2, Loader2, Clock, Coins, Gift, Sparkles, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { TOPUP_PRESETS } from '@/lib/types'
+import { useAppState } from '@/lib/app-state'
+import { formatThaiDateTime } from '@/lib/thai-date'
 
 interface Props {
   open: boolean
@@ -32,6 +34,17 @@ interface PendingTx {
 }
 
 export function TopUpModal({ open, onOpenChange, onSuccess }: Props) {
+  const { options } = useAppState()
+  const presets = React.useMemo(() => {
+    const fromDb = (options.topup_preset ?? []).map(o => ({
+      amount: Number(o.meta?.amount ?? o.value),
+      bonus: Number(o.meta?.bonus ?? 0),
+      bonusPct: Number(o.meta?.bonusPct ?? 0),
+      label: o.label,
+    }))
+    return fromDb.length > 0 ? fromDb : TOPUP_PRESETS
+  }, [options])
+
   const [selectedAmount, setSelectedAmount] = React.useState<number>(500)
   const [customAmount, setCustomAmount] = React.useState<string>('')
   const [creating, setCreating] = React.useState(false)
@@ -186,7 +199,7 @@ export function TopUpModal({ open, onOpenChange, onSuccess }: Props) {
                 <div>
                   <Label className="text-xs text-muted-foreground mb-2 block">เลือกแพ็คเกจ</Label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {TOPUP_PRESETS.map((p) => {
+                    {presets.map((p) => {
                       const isActive = selectedAmount === p.amount && !customAmount
                       return (
                         <button
@@ -388,7 +401,7 @@ export function TopUpModal({ open, onOpenChange, onSuccess }: Props) {
                         )}
                       </div>
                       <div className="text-xs text-muted-foreground mt-0.5">
-                        {tx.promptPayRef} · {new Date(tx.createdAt).toLocaleString('th-TH')}
+                        {tx.promptPayRef} · {formatThaiDateTime(tx.createdAt)}
                       </div>
                     </div>
                     <Badge variant="outline" className={

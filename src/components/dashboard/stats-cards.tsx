@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Wallet, FileText, Search, ShieldCheck, TrendingUp, Clock, Coins } from 'lucide-react'
 import type { DashboardStats } from '@/lib/types'
+import { formatThaiDateTime } from '@/lib/thai-date'
 
 interface Props {
   stats: DashboardStats['stats']
@@ -230,7 +231,7 @@ export function RecentQueriesCard({ queries }: { queries: DashboardStats['recent
                   </span>
                   <span>· {q.creditsUsed} cr</span>
                   <span>· {q.durationMs}ms</span>
-                  <span>· {new Date(q.createdAt).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                  <span>· {formatThaiDateTime(q.createdAt)}</span>
                 </div>
               </div>
               {q.status === 'success' ? (

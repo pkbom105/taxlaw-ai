@@ -16,7 +16,8 @@ import {
   FileUp, FileSearch, CheckCircle2, Clock, X, Sparkles, FileWarning, Scale, Quote
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { CATEGORY_META } from '@/lib/types'
+import { useAppState } from '@/lib/app-state'
+import { formatThaiDateTime, formatThaiDateFromInput } from '@/lib/thai-date'
 
 interface AuditResult {
   uploadId: string
@@ -65,8 +66,28 @@ interface Props {
 const AUDIT_COST = 10
 const ACCEPTED_TYPES = ['.pdf', '.docx', '.doc', '.txt', '.jpg', '.png']
 const MAX_SIZE = 10 * 1024 * 1024 // 10 MB
+const LAW_ACCEPTED_TYPES = ['.pdf', '.docx', '.doc', '.txt', '.md']
+const MAX_AI_SIZE = 4 * 1024 * 1024 // 4 MB — เพดานสำหรับส่งไฟล์ให้ AI วิเคราะห์
+
+interface LawAiResult {
+  used: boolean
+  provider: string | null
+  protocol: string | null
+  category: string
+  categoryLabel: string
+  type: string
+  shortTitle: string | null
+  summary: string | null
+  sections: number
+  tokens: number
+  creditsUsed: number
+  providerCredits: number | null
+  skippedReason?: string
+  textLength: number
+}
 
 export function UploadView({ balance, onTopUpNeeded, onCreditsChange }: Props) {
+  const { categories, options } = useAppState()
   const [tab, setTab] = React.useState<'audit' | 'law_doc' | 'history'>('audit')
   const [file, setFile] = React.useState<File | null>(null)
   const [dragOver, setDragOver] = React.useState(false)
@@ -78,13 +99,17 @@ export function UploadView({ balance, onTopUpNeeded, onCreditsChange }: Props) {
   const [historyLoading, setHistoryLoading] = React.useState(false)
 
   // Law doc form
-  const [lawCode, setLawCode] = React.useState('')
   const [lawTitle, setLawTitle] = React.useState('')
-  const [lawType, setLawType] = React.useState('act')
-  const [lawSource, setLawSource] = React.useState('rd.go.th')
+  const [lawUrl, setLawUrl] = React.useState('')
+  const [lawEdition, setLawEdition] = React.useState('')
+  const [lawStatus, setLawStatus] = React.useState('in_force')
+  const [lawPublishedAt, setLawPublishedAt] = React.useState('')
   const [lawFile, setLawFile] = React.useState<File | null>(null)
   const [lawDragOver, setLawDragOver] = React.useState(false)
   const [lawUploading, setLawUploading] = React.useState(false)
+  const [lawText, setLawText] = React.useState('')
+  const [lawCategory, setLawCategory] = React.useState('auto')
+  const [lawResult, setLawResult] = React.useState<LawAiResult | null>(null)
 
   React.useEffect(() => {
     if (tab === 'history') loadHistory()
@@ -133,8 +158,27 @@ export function UploadView({ balance, onTopUpNeeded, onCreditsChange }: Props) {
         toast.error('ไฟล์ใหญ่เกิน 10 MB')
         return
       }
+      const ext = '.' + (f.name.split('.').pop() || '').toLowerCase()
+      if (!LAW_ACCEPTED_TYPES.includes(ext)) {
+        toast.error(`รองรับ ${LAW_ACCEPTED_TYPES.join(', ')}`)
+        return
+      }
       setLawFile(f)
+      setLawResult(null)
     }
+  }
+
+  // อ่านไฟล์เป็น base64 เพื่อส่งให้เซิร์ฟเวอร์สกัดข้อความ (PDF/DOCX/TXT)
+  function readFileAsBase64(f: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = String(reader.result || '')
+        resolve(result.includes(',') ? result.split(',')[1] : result)
+      }
+      reader.onerror = () => reject(new Error('อ่านไฟล์ไม่สำเร็จ'))
+      reader.readAsDataURL(f)
+    })
   }
 
   async function handleAuditUpload() {
@@ -184,38 +228,66 @@ export function UploadView({ balance, onTopUpNeeded, onCreditsChange }: Props) {
   }
 
   async function handleLawDocUpload() {
-    if (!lawFile) {
-      toast.error('กรุณาเลือกไฟล์ PDF กฎหมาย')
+    if (!lawFile && !lawText.trim()) {
+      toast.error('กรุณาเลือกไฟล์ หรือวางข้อความกฎหมาย')
       return
     }
-    if (!lawCode || !lawTitle) {
-      toast.error('กรุณาระบุรหัสและชื่อกฎหมาย')
+    if (!lawTitle.trim()) {
+      toast.error('กรุณาระบุชื่อกฎหมาย')
+      return
+    }
+    if (lawFile && lawFile.size > MAX_AI_SIZE) {
+      toast.error('ไฟล์ใหญ่เกิน 4 MB สำหรับให้ AI วิเคราะห์ — กรุณาวางข้อความแทน')
       return
     }
 
     setLawUploading(true)
+    setLawResult(null)
     try {
+      let fileBase64: string | undefined
+      if (lawFile) {
+        try {
+          fileBase64 = await readFileAsBase64(lawFile)
+        } catch {
+          toast.error('อ่านไฟล์ไม่สำเร็จ')
+          return
+        }
+      }
+
       const res = await fetch('/api/upload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          fileName: lawFile.name,
-          fileSize: lawFile.size,
-          fileType: lawFile.type,
-          category,
+          fileName: lawFile?.name ?? 'pasted-law-text.txt',
+          fileSize: lawFile?.size ?? lawText.trim().length,
+          fileType: lawFile?.type || 'text/plain',
           uploadType: 'law_doc',
-          lawCode,
           lawTitle,
-          lawType,
-          source: lawSource,
+          sourceUrl: lawUrl.trim() || undefined,
+          edition: lawEdition.trim() || undefined,
+          status: lawStatus,
+          publishedAt: lawPublishedAt || undefined,
+          category: lawCategory === 'auto' ? undefined : lawCategory,
+          content: lawText.trim() || undefined,
+          fileBase64,
+          autoClassify: true,
         }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error)
+
+      setLawResult(data.ai ?? null)
+      if (typeof data.balance === 'number') onCreditsChange(data.balance)
       toast.success(data.message || 'เพิ่มเอกสารกฎหมายสำเร็จ')
+
       setLawFile(null)
-      setLawCode('')
+      setLawText('')
       setLawTitle('')
+      setLawUrl('')
+      setLawEdition('')
+      setLawStatus('in_force')
+      setLawPublishedAt('')
+      setLawCategory('auto')
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'อัปโหลดไม่สำเร็จ')
     } finally {
@@ -328,7 +400,7 @@ export function UploadView({ balance, onTopUpNeeded, onCreditsChange }: Props) {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {CATEGORY_META.map((c) => (
+                        {categories.map((c) => (
                           <SelectItem key={c.value} value={c.value}>
                             {c.label} ({c.short})
                           </SelectItem>
@@ -502,22 +574,12 @@ export function UploadView({ balance, onTopUpNeeded, onCreditsChange }: Props) {
                 เพิ่มเอกสารกฎหมายใหม่เข้าคลัง
               </CardTitle>
               <CardDescription>
-                สำหรับผู้ดูแลระบบ: เพิ่ม PDF กฎหมาย/ประกาศ/ข้อหารือใหม่ · ไม่มีค่าใช้จ่าย
+                เพิ่มไฟล์กฎหมาย/ประกาศ/ข้อหารือ (PDF · DOCX · TXT) หรือวางข้อความ — ระบบจะให้ AI วิเคราะห์ แยกหมวดหมู่ และสกัดมาตราเข้าคลังให้ค้นหาได้ทันที
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="law-code" className="text-xs">รหัสกฎหมาย <span className="text-rose-500">*</span></Label>
-                  <Input
-                    id="law-code"
-                    value={lawCode}
-                    onChange={(e) => setLawCode(e.target.value)}
-                    placeholder="เช่น RD-2026-001, ป.64/2567"
-                    className="text-sm"
-                  />
-                </div>
-                <div className="space-y-2">
+                <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="law-title" className="text-xs">ชื่อกฎหมาย <span className="text-rose-500">*</span></Label>
                   <Input
                     id="law-title"
@@ -527,41 +589,56 @@ export function UploadView({ balance, onTopUpNeeded, onCreditsChange }: Props) {
                     className="text-sm"
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label className="text-xs">ประเภทเอกสาร</Label>
-                  <Select value={lawType} onValueChange={setLawType}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="act">พ.ร.บ.</SelectItem>
-                      <SelectItem value="decree">พ.ร.ฎ.</SelectItem>
-                      <SelectItem value="regulation">กฎกระทรวง</SelectItem>
-                      <SelectItem value="announcement">ประกาศ</SelectItem>
-                      <SelectItem value="ruling">ข้อหารือ</SelectItem>
-                      <SelectItem value="treaty">สนธิสัญญา</SelectItem>
-                    </SelectContent>
-                  </Select>
+                <div className="space-y-2 md:col-span-2">
+                  <Label htmlFor="law-url" className="text-xs">ที่มา (URL)</Label>
+                  <Input
+                    id="law-url"
+                    type="url"
+                    value={lawUrl}
+                    onChange={(e) => setLawUrl(e.target.value)}
+                    placeholder="วางลิงก์ เช่น https://www.rd.go.th/..."
+                    className="text-sm font-mono"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    ระบบเก็บลิงก์นี้เป็นแหล่งอ้างอิง และถอดชื่อโดเมนมาเป็น &quot;แหล่งที่มา&quot; ให้อัตโนมัติ (ไม่บังคับ)
+                  </p>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs">หมวดหมู่</Label>
-                  <Select value={category} onValueChange={setCategory}>
+                  <Label htmlFor="law-edition" className="text-xs">ฉบับ</Label>
+                  <Input
+                    id="law-edition"
+                    value={lawEdition}
+                    onChange={(e) => setLawEdition(e.target.value)}
+                    placeholder="เช่น ฉบับที่ 4 (ไม่บังคับ)"
+                    className="text-sm"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-xs">สถานะ</Label>
+                  <Select value={lawStatus} onValueChange={setLawStatus}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {CATEGORY_META.map(c => (
-                        <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                      {(options.law_status ?? []).map(s => (
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2 md:col-span-2">
-                  <Label className="text-xs">แหล่งที่มา</Label>
-                  <Select value={lawSource} onValueChange={setLawSource}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="rd.go.th">กรมสรรพากร (rd.go.th)</SelectItem>
-                      <SelectItem value="krisdika.go.th">กฤษฎีกา (krisdika.go.th)</SelectItem>
-                      <SelectItem value="ratchakitcha">ราชกิจจานุเบกษา</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <Label htmlFor="law-published" className="text-xs">วันที่ประกาศ</Label>
+                  <Input
+                    id="law-published"
+                    type="date"
+                    value={lawPublishedAt}
+                    onChange={(e) => setLawPublishedAt(e.target.value)}
+                    className="text-sm"
+                  />
+                  {lawPublishedAt && (
+                    <p className="text-[10px] text-muted-foreground">
+                      วันที่ประกาศ (พ.ศ.):{' '}
+                      <span className="font-medium text-foreground">{formatThaiDateFromInput(lawPublishedAt)}</span>
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -579,13 +656,24 @@ export function UploadView({ balance, onTopUpNeeded, onCreditsChange }: Props) {
                   <input
                     id="law-file-input"
                     type="file"
-                    accept=".pdf"
+                    accept={LAW_ACCEPTED_TYPES.join(',')}
                     className="hidden"
-                    onChange={(e) => { const f = e.target.files?.[0]; if (f) setLawFile(f) }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0]
+                      if (f) {
+                        const ext = '.' + (f.name.split('.').pop() || '').toLowerCase()
+                        if (!LAW_ACCEPTED_TYPES.includes(ext)) {
+                          toast.error(`รองรับ ${LAW_ACCEPTED_TYPES.join(', ')}`)
+                          return
+                        }
+                        setLawFile(f)
+                        setLawResult(null)
+                      }
+                    }}
                   />
                   <FileText className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-                  <div className="text-sm font-medium">เลือกไฟล์ PDF กฎหมาย</div>
-                  <div className="text-xs text-muted-foreground mt-1">PDF เท่านั้น · สูงสุด 10 MB</div>
+                  <div className="text-sm font-medium">เลือกไฟล์กฎหมาย (PDF · DOCX · TXT)</div>
+                  <div className="text-xs text-muted-foreground mt-1">สูงสุด 10 MB · ส่งให้ AI วิเคราะห์ได้ไม่เกิน 4 MB</div>
                 </div>
               ) : (
                 <div className="border-2 border-violet-300 dark:border-violet-800 rounded-lg p-3 bg-violet-50/50 dark:bg-violet-950/20">
@@ -601,14 +689,77 @@ export function UploadView({ balance, onTopUpNeeded, onCreditsChange }: Props) {
                   </div>
                 </div>
               )}
+
+              {/* วางข้อความกฎหมาย (ใช้เมื่อไฟล์สแกน หรือต้องการแก้ข้อความ) */}
+              <div className="space-y-2">
+                <Label htmlFor="law-text" className="text-xs">ข้อความกฎหมาย (วางต่อได้เลย)</Label>
+                <Textarea
+                  id="law-text"
+                  value={lawText}
+                  onChange={(e) => setLawText(e.target.value)}
+                  placeholder="วางข้อความกฎหมาย เช่น มาตรา 40 เงินได้พึงประเมินจากการจ้างแรงงาน..."
+                  className="text-sm min-h-[120px]"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  {lawText.trim().length.toLocaleString()} ตัวอักษร · ถ้ามีทั้งไฟล์และข้อความ ระบบจะใช้ข้อความที่วาง · ต้องมี ≥ 200 ตัวอักษรจึงให้ AI วิเคราะห์
+                </p>
+              </div>
+
+              {/* หมวดหมู่ */}
+              <div className="space-y-2">
+                <Label className="text-xs">หมวดหมู่</Label>
+                <Select value={lawCategory} onValueChange={setLawCategory}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">ให้ AI วิเคราะห์อัตโนมัติ (แนะนำ)</SelectItem>
+                    {categories.map(c => (
+                      <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  AI ช่วยสกัดมาตราเสมอ · ถ้าเลือกหมวดเอง ระบบจะใช้หมวดที่เลือกแทนคำตอบของ AI
+                </p>
+              </div>
+
+              {/* ผลวิเคราะห์ของ AI */}
+              {lawResult && (
+                <div className={`rounded-lg border p-3 space-y-2 ${lawResult.used ? 'border-emerald-300 bg-emerald-50/60 dark:border-emerald-900 dark:bg-emerald-950/20' : 'border-amber-300 bg-amber-50/60 dark:border-amber-900 dark:bg-amber-950/20'}`}>
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    {lawResult.used ? <Sparkles className="h-4 w-4 text-emerald-600" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
+                    {lawResult.used ? 'AI วิเคราะห์เอกสารแล้ว' : 'ยังไม่ได้ใช้ AI วิเคราะห์'}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 text-[10px]">
+                    <Badge variant="outline">หมวด: {lawResult.categoryLabel}</Badge>
+                    <Badge variant="outline">ประเภท: {lawResult.type}</Badge>
+                    <Badge variant="outline">มาตรา: {lawResult.sections}</Badge>
+                    <Badge variant="outline">โทเคน: {lawResult.tokens.toLocaleString()}</Badge>
+                    <Badge variant="outline">หัก: {lawResult.creditsUsed} cr</Badge>
+                    {lawResult.providerCredits ? <Badge variant="outline">ต้นทุนค่าย: {lawResult.providerCredits} cr</Badge> : null}
+                    {lawResult.provider ? <Badge variant="outline">{lawResult.provider}</Badge> : null}
+                  </div>
+                  {lawResult.summary && <p className="text-xs text-muted-foreground">{lawResult.summary}</p>}
+                  {!lawResult.used && lawResult.skippedReason && (
+                    <p className="text-[10px] text-amber-700 dark:text-amber-400">เหตุผล: {lawResult.skippedReason}</p>
+                  )}
+                  <p className="text-[10px] text-muted-foreground">อ่านข้อความได้ {lawResult.textLength.toLocaleString()} ตัวอักษร</p>
+                </div>
+              )}
             </CardContent>
             <CardFooter className="border-t bg-muted/20 justify-end gap-2">
-              <Button variant="outline" onClick={() => { setLawFile(null); setLawCode(''); setLawTitle('') }}>
+              <Button variant="outline" onClick={() => {
+                setLawFile(null)
+                setLawTitle('')
+                setLawUrl('')
+                setLawEdition('')
+                setLawStatus('in_force')
+                setLawPublishedAt('')
+              }}>
                 ล้าง
               </Button>
               <Button
                 onClick={handleLawDocUpload}
-                disabled={!lawFile || !lawCode || !lawTitle || lawUploading}
+                disabled={!lawFile || !lawTitle.trim() || lawUploading}
                 className="bg-violet-600 hover:bg-violet-700"
               >
                 {lawUploading ? (
@@ -670,7 +821,7 @@ export function UploadView({ balance, onTopUpNeeded, onCreditsChange }: Props) {
                             </span>
                             <span>· {h.creditsUsed} cr</span>
                             <span>· {h.durationMs}ms</span>
-                            <span>· {new Date(h.createdAt).toLocaleDateString('th-TH', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>· {formatThaiDateTime(h.createdAt)}</span>
                           </div>
                         </div>
                         <Badge variant="outline" className={

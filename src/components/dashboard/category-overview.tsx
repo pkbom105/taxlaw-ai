@@ -7,9 +7,11 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Scale, Landmark, BookOpen, Gavel, Calculator, Globe, ExternalLink, FileText, ChevronRight } from 'lucide-react'
 import type { LawDocumentSummary } from '@/lib/types'
-import { CATEGORY_META } from '@/lib/types'
+import { CATEGORY_ICONS, CATEGORY_COLORS } from '@/lib/category-visuals'
+import { useAppState } from '@/lib/app-state'
 
 const ICONS: Record<string, React.ElementType> = {
+  ...CATEGORY_ICONS,
   scale: Scale,
   landmark: Landmark,
   'book-open': BookOpen,
@@ -19,6 +21,7 @@ const ICONS: Record<string, React.ElementType> = {
 }
 
 const COLOR_CLASSES: Record<string, { bg: string; text: string; border: string; badge: string }> = {
+  ...CATEGORY_COLORS,
   emerald: { bg: 'bg-emerald-50 dark:bg-emerald-950/40', text: 'text-emerald-700 dark:text-emerald-400', border: 'border-emerald-200 dark:border-emerald-900', badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400' },
   amber: { bg: 'bg-amber-50 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-400', border: 'border-amber-200 dark:border-amber-900', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400' },
   sky: { bg: 'bg-sky-50 dark:bg-sky-950/40', text: 'text-sky-700 dark:text-sky-400', border: 'border-sky-200 dark:border-sky-900', badge: 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400' },
@@ -32,6 +35,7 @@ interface Props {
 }
 
 export function CategoryOverview({ categories }: Props) {
+  const { categories: categoryDefs } = useAppState()
   // Group documents by category
   const byCategory = React.useMemo(() => {
     const map: Record<string, LawDocumentSummary[]> = {}
@@ -54,7 +58,7 @@ export function CategoryOverview({ categories }: Props) {
       <CardContent>
         <ScrollArea className="max-h-[28rem] pr-3 scrollbar-thin">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {CATEGORY_META.map((meta) => {
+            {categoryDefs.map((meta) => {
               const docs = byCategory[meta.value] || []
               const chunkCount = docs.reduce((s, d) => s + d.chunkCount, 0)
               const color = COLOR_CLASSES[meta.color]
@@ -99,7 +103,7 @@ export function CategoryOverview({ categories }: Props) {
             <div className="text-sm font-medium mb-2 text-muted-foreground">รายการเอกสาร ({categories.length} เล่ม)</div>
             <div className="space-y-1.5">
               {categories.map((doc) => {
-                const meta = CATEGORY_META.find(m => m.value === doc.category)
+                const meta = categoryDefs.find(m => m.value === doc.category)
                 const color = COLOR_CLASSES[meta?.color || 'emerald']
                 const Icon = ICONS[meta?.icon || 'scale'] || FileText
                 return (

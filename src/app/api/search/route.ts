@@ -1,5 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { AI_TIERS, creditsFromTokens, type AiMode } from '@/lib/ai-pricing'
+import { callAi, getAiConfig } from '@/lib/ai-call'
+
+interface MatchedChunk {
+  sectionLabel: string
+  content: string
+  pageStart: number
+  document: { shortTitle: string | null; title: string; source: string }
+}
+
+// คำตอบสำรอง (เส้นทาง keyword) — ใช้เมื่อยังไม่ตั้งค่า AI หรือเรียก AI ไม่สำเร็จ
+function buildKeywordAnswer(mode: string, query: string, matched: MatchedChunk[]): string {
+  const answerParts: string[] = []
+  answerParts.push(`**คำตอบจากฐานข้อมูลกฎหมาย** (${mode === 'basic' ? 'ค้นหาพื้นฐาน' : mode === 'deep' ? 'วิเคราะห์เชิงลึก' : 'ตรวจสอบเอกสาร'})`)
+  answerParts.push('')
+  answerParts.push(`พบข้อกฎหมายที่เกี่ยวข้อง ${matched.length} มาตรา/ข้อหารือ จากคำถาม "${query}" ดังนี้:`)
+  answerParts.push('')
+  matched.forEach((m, i) => {
+    answerParts.push(`**${i + 1}. ${m.sectionLabel}** - ${m.document.shortTitle || m.document.title}`)
+    answerParts.push(`> ${m.content}`)
+    answerParts.push(`📄 แหล่งที่มา: ${m.document.source} | ไฟล์ PDF หน้า ${m.pageStart}`)
+    answerParts.push('')
+  })
+
+  if (mode === 'deep' || mode === 'audit') {
+    answerParts.push('**สรุปการวิเคราะห์**')
+    answerParts.push(`จากการวิเคราะห์ ${matched.length} มาตราที่เกี่ยวข้อง พบว่าคำถาม "${query}" มีข้อกำหนดทางกฎหมายที่ชัดเจนในฐานข้อมูลราชการ คำตอบข้างต้นมาจากเอกสารทางการ 100% ไม่มีการตีความเพิ่มเติม`)
+  }
+
+  return answerParts.join('\n')
+}
 
 // POST /api/search - Zero-Hallucination RAG search
 // Strict policy: only answer from retrieved context. If no match -> return "no_match"
@@ -20,20 +51,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Wallet not found' }, { status: 404 })
     }
 
-    // Pricing tier
-    const pricing: Record<string, { credits: number; chunkLimit: number; maxTokens: number }> = {
-      basic: { credits: 1, chunkLimit: 3, maxTokens: 300 },
-      deep: { credits: 5, chunkLimit: 8, maxTokens: 800 },
-      audit: { credits: 10, chunkLimit: 15, maxTokens: 1500 },
-    }
-    const tier = pricing[mode] || pricing.basic
+    // Pricing tier + การเชื่อมต่อ AI (ถ้าตั้งค่าไว้ → คิดเงินตาม Token credits)
+    const tier = AI_TIERS[(mode as AiMode)] || AI_TIERS.basic
+    const aiConfig = await getAiConfig()
 
-    // Check balance
-    if (user.wallet.balance < tier.credits) {
+    // เช็คยอดก่อนทำงาน: ถ้าต่อ AI ใช้ได้ ต้องมีอย่างน้อย 1 เครดิต
+    const minRequired = aiConfig ? 1 : tier.credits
+    if (user.wallet.balance < minRequired) {
       return NextResponse.json({
         error: 'INSUFFICIENT_CREDITS',
-        message: `ยอดเครดิตไม่เพียงพอ ต้องการ ${tier.credits} ครีดิต คงเหลือ ${user.wallet.balance} ครีดิต`,
-        required: tier.credits,
+        message: `ยอดเครดิตไม่เพียงพอ ต้องการ ${minRequired} ครีดิต คงเหลือ ${user.wallet.balance} ครีดิต`,
+        required: minRequired,
         balance: user.wallet.balance,
       }, { status: 402 })
     }
@@ -112,35 +140,47 @@ export async function POST(req: NextRequest) {
       })
     }
 
-    // Deduct credits
+    // ---- ตอบด้วย AI ถ้าตั้งค่าคีย์ไว้ ไม่งั้นถอยไปสร้างคำตอบจาก context เอง (keyword) ----
+    const contextText = matched
+      .map((m, i) => `[${i + 1}] ${m.sectionLabel} — ${m.document.shortTitle || m.document.title} (${m.document.source}, หน้า ${m.pageStart})\n${m.content}`)
+      .join('\n\n')
+
+    let engine: 'ai' | 'keyword' = 'keyword'
+    let answer = ''
+    let tokensUsed = 0
+    let creditsUsed = tier.credits
+    let providerCredits: number | null = null
+
+    if (aiConfig) {
+      const aiResult = await callAi(aiConfig, tier.maxTokens, contextText, query)
+      if (aiResult) {
+        answer = aiResult.content
+        tokensUsed = aiResult.tokens
+        providerCredits = aiResult.providerCredits
+        creditsUsed = creditsFromTokens(tokensUsed) // 1 เครดิต : 1,000 tokens (ปัดขึ้น ขั้นต่ำ 1)
+        engine = 'ai'
+      } else {
+        console.error(`AI unavailable -> fallback keyword (mode=${mode}, protocol=${aiConfig.protocol})`)
+      }
+    }
+
+    if (!answer) {
+      answer = buildKeywordAnswer(mode, query, matched)
+      tokensUsed = answer.length
+      creditsUsed = tier.credits
+      engine = 'keyword'
+    }
+
+    // หักเครดิตตามที่ใช้จริง (กันยอดติดลบ)
+    const charged = Math.min(creditsUsed, user.wallet.balance)
     await db.wallet.update({
       where: { userId: user.id },
       data: {
-        balance: { decrement: tier.credits },
-        totalUsed: { increment: tier.credits },
+        balance: { decrement: charged },
+        totalUsed: { increment: charged },
       },
     })
 
-    // Generate strict answer from retrieved context ONLY
-    // Format: Summary + numbered citations
-    const answerParts: string[] = []
-    answerParts.push(`**คำตอบจากฐานข้อมูลกฎหมาย** (${mode === 'basic' ? 'ค้นหาพื้นฐาน' : mode === 'deep' ? 'วิเคราะห์เชิงลึก' : 'ตรวจสอบเอกสาร'})`)
-    answerParts.push('')
-    answerParts.push(`พบข้อกฎหมายที่เกี่ยวข้อง ${matched.length} มาตรา/ข้อหารือ จากคำถาม "${query}" ดังนี้:`)
-    answerParts.push('')
-    matched.forEach((m, i) => {
-      answerParts.push(`**${i + 1}. ${m.sectionLabel}** - ${m.document.shortTitle || m.document.title}`)
-      answerParts.push(`> ${m.content}`)
-      answerParts.push(`📄 แหล่งที่มา: ${m.document.source} | ไฟล์ PDF หน้า ${m.pageStart}`)
-      answerParts.push('')
-    })
-
-    if (mode === 'deep' || mode === 'audit') {
-      answerParts.push('**สรุปการวิเคราะห์**')
-      answerParts.push(`จากการวิเคราะห์ ${matched.length} มาตราที่เกี่ยวข้อง พบว่าคำถาม "${query}" มีข้อกำหนดทางกฎหมายที่ชัดเจนในฐานข้อมูลราชการ คำตอบข้างต้นมาจากเอกสารทางการ 100% ไม่มีการตีความเพิ่มเติม`)
-    }
-
-    const answer = answerParts.join('\n')
     const durationMs = Date.now() - startTime
 
     // Save query + citations
@@ -149,11 +189,11 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         query,
         mode,
-        creditsUsed: tier.credits,
+        creditsUsed: charged,
         answer,
         status: 'success',
         chunkCount: matched.length,
-        tokensUsed: answer.length,
+        tokensUsed,
         durationMs,
         citations: {
           create: matched.map((m, i) => ({
@@ -176,8 +216,8 @@ export async function POST(req: NextRequest) {
       data: {
         userId: user.id,
         action: `search_${mode}`,
-        creditsCost: tier.credits,
-        metadata: JSON.stringify({ queryId: searchQuery.id, chunkCount: matched.length }),
+        creditsCost: charged,
+        metadata: JSON.stringify({ queryId: searchQuery.id, chunkCount: matched.length, engine, tokens: tokensUsed, credits: charged, protocol: aiConfig?.protocol ?? null, provider: aiConfig?.providerId ?? null, providerCredits }),
       },
     })
 
@@ -197,10 +237,14 @@ export async function POST(req: NextRequest) {
         relevance: c.relevance,
         snippet: c.snippet,
       })),
-      creditsUsed: tier.credits,
+      creditsUsed: charged,
       balance: updatedWallet?.balance || 0,
       durationMs,
-      tokensUsed: answer.length,
+      tokensUsed,
+      engine,
+      protocol: aiConfig?.protocol ?? null,
+      provider: aiConfig?.providerId ?? null,
+      providerCredits,
     })
   } catch (err) {
     console.error('Search API error:', err)

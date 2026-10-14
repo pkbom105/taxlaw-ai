@@ -1,5 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
+import fs from 'node:fs'
+import path from 'node:path'
 import { db } from '@/lib/db'
+
+// โฟลเดอร์ที่เก็บไฟล์ PDF ของคลัง (ให้บริการผ่าน /public)
+const BATCH_DIR = 'ิbook-pdf'
+
+// หาลิงก์เปิดไฟล์จากชื่อไฟล์ — ตรวจว่ามีไฟล์จริงใน public ก่อน
+function fileUrlFor(pdfFile: string | null): string | null {
+  if (!pdfFile) return null
+  const candidates = [
+    { full: path.join(process.cwd(), 'public', BATCH_DIR, pdfFile), url: `/${encodeURIComponent(BATCH_DIR)}/${encodeURIComponent(pdfFile)}` },
+    { full: path.join(process.cwd(), 'public', pdfFile), url: `/${encodeURIComponent(pdfFile)}` },
+  ]
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c.full)) return c.url
+    } catch {
+      // ignore
+    }
+  }
+  return null
+}
 
 // GET /api/documents - list all law documents with chunk counts
 export async function GET(req: NextRequest) {
@@ -32,14 +54,10 @@ export async function GET(req: NextRequest) {
       orderBy: { category: 'asc' },
     })
 
-    const categoryMap: Record<string, string> = {
-      revenue_code: 'ประมวลรัษฎากร',
-      specific_tax: 'ภาษีเฉพาะด้าน',
-      ccc: 'ประมวลกฎหมายแพ่งฯ',
-      criminal_corporate: 'อาญา/บริษัท',
-      accounting: 'กฎหมายบัญชี',
-      dta: 'สนธิสัญญาภาษีซ้อน',
-    }
+    const categoryDefs = await db.lawCategory.findMany({
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+    })
+    const labelOf = (value: string) => categoryDefs.find(c => c.value === value)?.label ?? value
 
     return NextResponse.json({
       documents: documents.map(d => ({
@@ -47,12 +65,14 @@ export async function GET(req: NextRequest) {
         code: d.code,
         title: d.title,
         shortTitle: d.shortTitle,
+        summary: d.summary,
         type: d.type,
         category: d.category,
-        categoryLabel: categoryMap[d.category] || d.category,
+        categoryLabel: labelOf(d.category),
         source: d.source,
         sourceUrl: d.sourceUrl,
         pdfFile: d.pdfFile,
+        fileUrl: fileUrlFor(d.pdfFile),
         pageCount: d.pageCount,
         effectiveDate: d.effectiveDate,
         publishedAt: d.publishedAt,
@@ -68,7 +88,7 @@ export async function GET(req: NextRequest) {
           content: c.content,
         })),
       })),
-      categories: Object.entries(categoryMap).map(([value, label]) => ({ value, label })),
+      categories: categoryDefs.map(c => ({ value: c.value, label: c.label })),
     })
   } catch (err) {
     console.error('Documents API error:', err)

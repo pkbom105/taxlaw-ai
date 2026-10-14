@@ -1,39 +1,45 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import { Scale, LayoutDashboard, User, Upload, FileText, Wallet, ShieldCheck } from 'lucide-react'
+import { Scale, LayoutDashboard, User, Upload, FileText, Wallet, ShieldCheck, Settings, Activity } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 
-export type ViewKey = 'dashboard' | 'profile' | 'upload' | 'documents'
+export type ViewKey = 'dashboard' | 'profile' | 'upload' | 'documents' | 'ai-log' | 'settings'
 
 interface MenuItem {
   key: ViewKey
+  href: string
   label: string
   description: string
   icon: React.ElementType
   color: string
+  short?: string
 }
 
 const MENU: MenuItem[] = [
-  { key: 'dashboard', label: 'Dashboard', description: 'ภาพรวมระบบ', icon: LayoutDashboard, color: 'emerald' },
-  { key: 'profile', label: 'โปรไฟล์', description: 'ข้อมูลผู้ใช้ + Wallet', icon: User, color: 'sky' },
-  { key: 'upload', label: 'อัปโหลดเอกสาร', description: 'ตรวจสอบ Tax Compliance', icon: Upload, color: 'amber' },
-  { key: 'documents', label: 'คลังกฎหมาย', description: 'แยกตาม 6 หมวด', icon: FileText, color: 'violet' },
+  { key: 'dashboard', href: '/dashboard', label: 'Dashboard', description: 'ภาพรวมระบบ', icon: LayoutDashboard, color: 'emerald' },
+  { key: 'profile', href: '/profile', label: 'โปรไฟล์', description: 'ข้อมูลผู้ใช้ + Wallet', icon: User, color: 'sky' },
+  { key: 'upload', href: '/upload', label: 'อัปโหลดเอกสาร', description: 'ตรวจสอบ Tax Compliance', icon: Upload, color: 'amber' },
+  { key: 'documents', href: '/documents', label: 'คลังกฎหมาย', description: 'แยกตาม 6 หมวด', icon: FileText, color: 'violet' },
+  { key: 'ai-log', href: '/ai-log', label: 'AI log Usage', description: 'ประวัติใช้ AI + โทเคน', icon: Activity, color: 'rose', short: 'AI log' },
+  { key: 'settings', href: '/settings', label: 'ตั้งค่า', description: 'หมวดหมู่เอกสาร', icon: Settings, color: 'cyan' },
 ]
 
 interface Props {
-  active: ViewKey
-  onChange: (v: ViewKey) => void
   balance: number | null
   userName: string | null
   loading: boolean
   onTopUp: () => void
 }
 
-export function Sidebar({ active, onChange, balance, userName, loading, onTopUp }: Props) {
+export function Sidebar({ balance, userName, loading, onTopUp }: Props) {
+  const pathname = usePathname()
+
   return (
     <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-border bg-sidebar/60 backdrop-blur-sm sticky top-[5.5rem] self-start max-h-[calc(100vh-5.5rem)]">
       {/* Logo + brand */}
@@ -64,11 +70,11 @@ export function Sidebar({ active, onChange, balance, userName, loading, onTopUp 
         </div>
         {MENU.map((item) => {
           const Icon = item.icon
-          const isActive = active === item.key
+          const isActive = pathname === item.href
           return (
-            <button
+            <Link
               key={item.key}
-              onClick={() => onChange(item.key)}
+              href={item.href}
               className={cn(
                 'w-full flex items-center gap-3 px-2.5 py-2 rounded-md text-sm transition-all group',
                 isActive
@@ -91,7 +97,7 @@ export function Sidebar({ active, onChange, balance, userName, loading, onTopUp 
               {isActive && (
                 <div className={`w-1 h-6 rounded-full bg-${item.color}-500`} />
               )}
-            </button>
+            </Link>
           )
         })}
 
@@ -155,25 +161,27 @@ export function Sidebar({ active, onChange, balance, userName, loading, onTopUp 
 }
 
 // Mobile bottom nav for small screens
-export function MobileNav({ active, onChange }: { active: ViewKey; onChange: (v: ViewKey) => void }) {
+export function MobileNav() {
+  const pathname = usePathname()
+
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur border-t border-border">
-      <div className="grid grid-cols-4 gap-1 p-1.5">
+      <div className="grid grid-cols-6 gap-1 p-1.5">
         {MENU.map((item) => {
           const Icon = item.icon
-          const isActive = active === item.key
+          const isActive = pathname === item.href
           return (
-            <button
+            <Link
               key={item.key}
-              onClick={() => onChange(item.key)}
+              href={item.href}
               className={cn(
                 'flex flex-col items-center gap-0.5 py-1.5 rounded-md text-[10px] transition-colors',
                 isActive ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40' : 'text-muted-foreground'
               )}
             >
               <Icon className="h-4 w-4" />
-              <span>{item.label.split(' ')[0]}</span>
-            </button>
+              <span>{item.short ?? item.label.split(' ')[0]}</span>
+            </Link>
           )
         })}
       </div>

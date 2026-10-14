@@ -60,6 +60,8 @@ model LawDocument {
   code          String   @unique // e.g. "RC", "CCC", "DTA-TH-US"
   title         String
   shortTitle    String?
+  summary       String? // คำอธิบายสรุป 1-3 บรรทัด (AI สร้าง)
+  edition       String? // ฉบับ เช่น "ฉบับที่ 4"
   type          String   // act | decree | regulation | ruling | announcement
   category      String   // revenue_code | specific_tax | ccc | criminal_corporate | accounting | dta
   source        String   // rd.go.th | ratchakitcha | krisdika
@@ -93,6 +95,46 @@ model LawChunk {
 
   @@index([documentId])
   @@index([sectionNumber])
+}
+
+// Law category = 6 main groups shown in the UI. DB-driven so they can be managed in /settings
+model LawCategory {
+  id          String   @id @default(cuid())
+  value       String   @unique // slug referenced by LawDocument.category, e.g. "revenue_code"
+  label       String
+  short       String
+  description String
+  icon        String   @default("scale")
+  color       String   @default("emerald")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([sortOrder])
+}
+
+// Generic option lists for form dropdowns / pickers — managed in /settings
+model OptionItem {
+  id        String   @id @default(cuid())
+  group     String // law_type | law_source | role | search_mode | topup_preset | category_icon | category_color
+  value     String
+  label     String
+  meta      String? // JSON string for extra fields (credits, features, bonus, ...)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([group, value])
+  @@index([group])
+}
+
+// App-level settings (API endpoint / API key) — edited in /settings
+model AppSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  isSecret  Boolean  @default(false)
+  updatedAt DateTime @updatedAt
 }
 
 model SearchQuery {

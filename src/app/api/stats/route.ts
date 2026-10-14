@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
+import { formatThaiDayMonth } from '@/lib/thai-date'
 
 // Get demo user (in production this would come from auth)
 async function getDemoUser() {
@@ -61,20 +62,14 @@ export async function GET(req: NextRequest) {
       }),
     ])
 
-    // Build category distribution
-    const categoryMap: Record<string, string> = {
-      revenue_code: 'ประมวลรัษฎากร',
-      specific_tax: 'ภาษีเฉพาะด้าน',
-      ccc: 'ประมวลกฎหมายแพ่งฯ',
-      criminal_corporate: 'อาญา/บริษัท',
-      accounting: 'กฎหมายบัญชี',
-      dta: 'สนธิสัญญาภาษีซ้อน',
-    }
+    // Build category distribution — labels come from the DB so they stay in sync with /settings
+    const categoryDefs = await db.lawCategory.findMany()
+    const labelOf = (value: string) => categoryDefs.find(c => c.value === value)?.label ?? value
     const categories = topDocuments.map(doc => ({
       code: doc.code,
       title: doc.shortTitle || doc.title,
       category: doc.category,
-      categoryLabel: categoryMap[doc.category] || doc.category,
+      categoryLabel: labelOf(doc.category),
       type: doc.type,
       source: doc.source,
       sourceUrl: doc.sourceUrl,
@@ -100,7 +95,7 @@ export async function GET(req: NextRequest) {
     }
     const dailyUsageData = Object.values(dailyMap).map(d => ({
       ...d,
-      dateLabel: new Date(d.date).toLocaleDateString('th-TH', { day: '2-digit', month: 'short' }),
+      dateLabel: formatThaiDayMonth(d.date),
     }))
 
     // Citation accuracy (queries with at least 1 citation / total)

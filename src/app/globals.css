@@ -6,7 +6,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: "Sarabun", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", "Noto Sans", sans-serif;
   --font-mono: var(--font-geist-mono);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -112,12 +112,26 @@
   --sidebar-ring: oklch(0.7 0.15 160);
 }
 
+/* Text selection highlight — visible on every page */
+::selection {
+  background-color: oklch(0.82 0.13 160 / 0.55);
+  color: oklch(0.18 0.02 160);
+}
+
+/* Text that users need to copy (values, codes) must stay selectable */
+.selectable-text,
+.selectable-text * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-sans);
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }

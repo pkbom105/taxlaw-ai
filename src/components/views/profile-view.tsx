@@ -11,6 +11,8 @@ import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { User, Mail, Building2, Briefcase, Save, Loader2, Wallet, TrendingUp, ShieldCheck, Search, Calendar, Award, Activity, Coins, Crown } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAppState } from '@/lib/app-state'
+import { formatThaiDate } from '@/lib/thai-date'
 
 interface ProfileData {
   user: {
@@ -72,6 +74,8 @@ const ACTION_LABELS: Record<string, string> = {
 }
 
 export function ProfileView() {
+  const { options } = useAppState()
+  const roleOptions = options.role?.length ? options.role : ROLE_OPTIONS
   const [data, setData] = React.useState<ProfileData | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [saving, setSaving] = React.useState(false)
@@ -153,7 +157,7 @@ export function ProfileView() {
               <div className="text-xs text-muted-foreground flex items-center gap-3 mt-1 flex-wrap">
                 <span className="flex items-center gap-1">
                   <Briefcase className="h-3 w-3" />
-                  {ROLE_OPTIONS.find(r => r.value === data.user.role)?.label || data.user.role}
+                  {roleOptions.find(r => r.value === data.user.role)?.label || data.user.role}
                 </span>
                 {data.user.company && (
                   <span className="flex items-center gap-1">
@@ -163,7 +167,7 @@ export function ProfileView() {
                 )}
                 <span className="flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
-                  เข้าร่วมเมื่อ {new Date(data.user.createdAt).toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' })}
+                  เข้าร่วมเมื่อ {formatThaiDate(data.user.createdAt)}
                 </span>
               </div>
             </div>
@@ -236,7 +240,7 @@ export function ProfileView() {
                     </div>
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLE_OPTIONS.map(r => (
+                    {roleOptions.map(r => (
                       <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
                     ))}
                   </SelectContent>

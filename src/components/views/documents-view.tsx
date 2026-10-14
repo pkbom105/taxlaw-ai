@@ -3,16 +3,18 @@
 import * as React from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
-  Scale, Landmark, BookOpen, Gavel, Calculator, Globe, FileText, Search,
-  ChevronDown, ChevronRight, ExternalLink, Calendar, Files, Hash, Layers, Filter, X
+  Scale, Landmark, BookOpen, Gavel, Calculator, Globe, FileText,
+  ChevronDown, ChevronRight, ExternalLink, Calendar, Files, Hash, Layers, Filter, Sparkles
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { CATEGORY_META, type LawCategory } from '@/lib/types'
+import { type LawCategory } from '@/lib/types'
+import { CATEGORY_ICONS, CATEGORY_COLORS, type CategoryColorClasses } from '@/lib/category-visuals'
+import { useAppState, optionLabel } from '@/lib/app-state'
+import { formatThaiDate } from '@/lib/thai-date'
 
 interface Chunk {
   id: string
@@ -29,12 +31,14 @@ interface DocumentItem {
   code: string
   title: string
   shortTitle: string | null
+  summary: string | null
   type: string
   category: LawCategory
   categoryLabel: string
   source: string
   sourceUrl: string | null
   pdfFile: string | null
+  fileUrl: string | null
   pageCount: number
   chunkCount: number
   status: string
@@ -43,6 +47,7 @@ interface DocumentItem {
 }
 
 const ICONS: Record<string, React.ElementType> = {
+  ...CATEGORY_ICONS,
   scale: Scale,
   landmark: Landmark,
   'book-open': BookOpen,
@@ -51,7 +56,8 @@ const ICONS: Record<string, React.ElementType> = {
   globe: Globe,
 }
 
-const COLOR_CLASSES: Record<string, { bg: string; text: string; border: string; badge: string; gradient: string }> = {
+const COLOR_CLASSES: Record<string, CategoryColorClasses> = {
+  ...CATEGORY_COLORS,
   emerald: { bg: 'bg-emerald-50 dark:bg-emerald-950/40', text: 'text-emerald-700 dark:text-emerald-400', border: 'border-emerald-200 dark:border-emerald-900', badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400', gradient: 'from-emerald-500 to-emerald-700' },
   amber: { bg: 'bg-amber-50 dark:bg-amber-950/40', text: 'text-amber-700 dark:text-amber-400', border: 'border-amber-200 dark:border-amber-900', badge: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400', gradient: 'from-amber-500 to-amber-700' },
   sky: { bg: 'bg-sky-50 dark:bg-sky-950/40', text: 'text-sky-700 dark:text-sky-400', border: 'border-sky-200 dark:border-sky-900', badge: 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400', gradient: 'from-sky-500 to-sky-700' },
@@ -70,12 +76,11 @@ const TYPE_LABELS: Record<string, string> = {
 }
 
 export function DocumentsView() {
+  const { categories, options } = useAppState()
   const [documents, setDocuments] = React.useState<DocumentItem[]>([])
   const [loading, setLoading] = React.useState(true)
-  const [search, setSearch] = React.useState('')
   const [activeCategory, setActiveCategory] = React.useState<LawCategory | 'all'>('all')
   const [expandedDocs, setExpandedDocs] = React.useState<Set<string>>(new Set())
-  const [chunkSearch, setChunkSearch] = React.useState<Record<string, string>>({})
 
   async function load() {
     try {
@@ -100,22 +105,11 @@ export function DocumentsView() {
     })
   }
 
-  // Filter documents
+  // Filter documents (ตามหมวดที่เลือก)
   const filteredDocs = React.useMemo(() => {
-    let docs = documents
-    if (activeCategory !== 'all') {
-      docs = docs.filter(d => d.category === activeCategory)
-    }
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      docs = docs.filter(d =>
-        d.title.toLowerCase().includes(q) ||
-        d.code.toLowerCase().includes(q) ||
-        (d.shortTitle?.toLowerCase().includes(q) ?? false)
-      )
-    }
-    return docs
-  }, [documents, activeCategory, search])
+    if (activeCategory === 'all') return documents
+    return documents.filter(d => d.category === activeCategory)
+  }, [documents, activeCategory])
 
   // Group by category
   const groupedByCategory = React.useMemo(() => {
@@ -139,16 +133,6 @@ export function DocumentsView() {
   }, [documents])
 
   const totalChunks = documents.reduce((s, d) => s + d.chunkCount, 0)
-
-  function filterChunks(doc: DocumentItem): Chunk[] {
-    const q = (chunkSearch[doc.id] || '').toLowerCase().trim()
-    if (!q) return doc.chunks
-    return doc.chunks.filter(c =>
-      c.content.toLowerCase().includes(q) ||
-      c.sectionLabel.toLowerCase().includes(q) ||
-      (c.keywords?.toLowerCase().includes(q) ?? false)
-    )
-  }
 
   return (
     <div className="space-y-6">
@@ -224,7 +208,7 @@ export function DocumentsView() {
           >
             ทั้งหมด ({documents.length})
           </button>
-          {CATEGORY_META.map((meta) => {
+          {categories.map((meta) => {
             const stats = categoryStats[meta.value] || { docs: 0, chunks: 0 }
             const color = COLOR_CLASSES[meta.color]
             const isActive = activeCategory === meta.value
@@ -245,25 +229,6 @@ export function DocumentsView() {
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="ค้นหาชื่อกฎหมาย, รหัส..."
-          className="pl-9 pr-9"
-        />
-        {search && (
-          <button
-            onClick={() => setSearch('')}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-
       {/* Documents grouped by category */}
       {loading ? (
         <div className="space-y-4">
@@ -271,18 +236,17 @@ export function DocumentsView() {
             <Card key={i} className="h-32 animate-pulse bg-muted/40" />
           ))}
         </div>
-      ) : Object.keys(groupedByCategory).length === 0 ? (
+      ) : filteredDocs.length === 0 && documents.length > 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <FileText className="h-10 w-10 mx-auto text-muted-foreground/50 mb-3" />
-            <div className="text-sm text-muted-foreground">ไม่พบเอกสารที่ตรงกับการค้นหา</div>
+            <div className="text-sm text-muted-foreground">ยังไม่มีเอกสารในหมวดที่เลือก</div>
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-6">
-          {CATEGORY_META.map((meta) => {
-            const docs = groupedByCategory[meta.value]
-            if (!docs || docs.length === 0) return null
+          {categories.map((meta) => {
+            const docs = groupedByCategory[meta.value] || []
             const color = COLOR_CLASSES[meta.color]
             const Icon = ICONS[meta.icon] || FileText
             const totalChunksInCat = docs.reduce((s, d) => s + d.chunkCount, 0)
@@ -321,9 +285,13 @@ export function DocumentsView() {
                 </div>
 
                 <CardContent className="p-4 space-y-2">
+                  {docs.length === 0 && (
+                    <div className="py-6 text-center text-xs text-muted-foreground border border-dashed border-border/60 rounded-lg">
+                      ยังไม่มีเอกสารในหมวดนี้ — เพิ่มเอกสารจริงได้ที่หน้าอัปโหลด
+                    </div>
+                  )}
                   {docs.map((doc) => {
                     const isExpanded = expandedDocs.has(doc.id)
-                    const filteredChunks = filterChunks(doc)
                     return (
                       <div key={doc.id} className="border border-border/60 rounded-lg overflow-hidden bg-background">
                         {/* Doc header - clickable */}
@@ -339,9 +307,19 @@ export function DocumentsView() {
                               <span className="text-sm font-semibold">{doc.shortTitle || doc.title}</span>
                               <Badge variant="outline" className="text-[9px] font-mono">{doc.code}</Badge>
                               <Badge variant="outline" className={`${color.badge} border-0 text-[9px]`}>
-                                {TYPE_LABELS[doc.type] || doc.type}
+                                {optionLabel(options, 'law_type', doc.type, TYPE_LABELS[doc.type] || doc.type)}
                               </Badge>
                             </div>
+                            {doc.summary ? (
+                              <div className="text-xs text-muted-foreground mt-1 flex items-start gap-1.5">
+                                <Sparkles className="h-3 w-3 mt-0.5 shrink-0 text-amber-500" />
+                                <span className="line-clamp-3">{doc.summary}</span>
+                              </div>
+                            ) : doc.chunkCount === 0 ? (
+                              <div className="text-[10px] text-amber-600 dark:text-amber-400 mt-1">
+                                ยังไม่มีคำอธิบาย — อัปโหลด/ประมวลผลด้วย AI เพื่อให้มีสรุปและค้นหาได้
+                              </div>
+                            ) : null}
                             <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-3 flex-wrap">
                               <span>{doc.chunkCount} มาตรา</span>
                               <span>· {doc.pageCount} หน้า</span>
@@ -349,11 +327,23 @@ export function DocumentsView() {
                               {doc.effectiveDate && (
                                 <span className="flex items-center gap-1">
                                   · <Calendar className="h-2.5 w-2.5" />
-                                  {new Date(doc.effectiveDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short' })}
+                                  {formatThaiDate(doc.effectiveDate)}
                                 </span>
                               )}
                             </div>
                           </div>
+                          {doc.fileUrl && (
+                            <a
+                              href={doc.fileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-xs text-violet-600 dark:text-violet-400 hover:underline flex items-center gap-1 shrink-0"
+                            >
+                              <FileText className="h-3 w-3" />
+                              เปิดไฟล์
+                            </a>
+                          )}
                           {doc.sourceUrl && (
                             <a
                               href={doc.sourceUrl}
@@ -371,25 +361,14 @@ export function DocumentsView() {
                         {/* Expanded chunks */}
                         {isExpanded && (
                           <div className="border-t border-border/60 bg-muted/20 p-3 space-y-3">
-                            {/* Chunk search */}
-                            <div className="relative max-w-sm">
-                              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
-                              <Input
-                                value={chunkSearch[doc.id] || ''}
-                                onChange={(e) => setChunkSearch({ ...chunkSearch, [doc.id]: e.target.value })}
-                                placeholder={`ค้นหาใน ${doc.chunkCount} มาตรา...`}
-                                className="h-8 pl-8 text-xs"
-                              />
-                            </div>
-
-                            {filteredChunks.length === 0 ? (
+                            {doc.chunks.length === 0 ? (
                               <div className="text-xs text-muted-foreground text-center py-4">
-                                ไม่พบมาตราที่ตรงกับ "{chunkSearch[doc.id]}"
+                                ยังไม่มีมาตราในเอกสารนี้
                               </div>
                             ) : (
                               <ScrollArea className="max-h-96 scrollbar-thin pr-2">
                                 <div className="space-y-2">
-                                  {filteredChunks.map((chunk) => (
+                                  {doc.chunks.map((chunk) => (
                                     <div key={chunk.id} className="p-3 rounded-md bg-background border border-border/60 hover:border-foreground/30 transition-colors">
                                       <div className="flex items-center justify-between gap-2 mb-1.5">
                                         <div className="flex items-center gap-2">

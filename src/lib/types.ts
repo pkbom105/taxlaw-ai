@@ -4,13 +4,30 @@ export type SearchMode = 'basic' | 'deep' | 'audit'
 
 export type SearchStatus = 'pending' | 'success' | 'no_match' | 'error'
 
-export type LawCategory =
-  | 'revenue_code'
-  | 'specific_tax'
-  | 'ccc'
-  | 'criminal_corporate'
-  | 'accounting'
-  | 'dta'
+// Category slugs are DB-driven now (LawCategory model + /settings), so this stays a string.
+export type LawCategory = string
+
+export interface CategoryRecord {
+  id: string
+  value: string
+  label: string
+  short: string
+  description: string
+  icon: string
+  color: string
+  sortOrder: number
+  documentCount: number
+}
+
+export interface OptionRecord {
+  id: string
+  group: string
+  value: string
+  label: string
+  meta: Record<string, unknown> | null
+  sortOrder: number
+  usageCount: number
+}
 
 export interface CategoryMeta {
   value: LawCategory

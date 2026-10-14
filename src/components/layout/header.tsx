@@ -1,11 +1,13 @@
 'use client'
 
 import * as React from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Scale, Wallet, Plus, ShieldCheck, Database, Phone } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { ViewKey } from '@/components/layout/sidebar'
+import { useAppState } from '@/lib/app-state'
 
 interface Props {
   balance: number | null
@@ -13,25 +15,27 @@ interface Props {
   userRole: string | null
   loading: boolean
   onTopUp: () => void
-  activeView: ViewKey
-  onNavigate: (v: ViewKey) => void
 }
 
-const VIEW_TITLES: Record<ViewKey, { title: string; sub: string }> = {
-  dashboard: { title: 'Dashboard', sub: 'ภาพรวมระบบ' },
-  profile: { title: 'โปรไฟล์', sub: 'ข้อมูลผู้ใช้' },
-  upload: { title: 'อัปโหลด', sub: 'ตรวจสอบเอกสาร' },
-  documents: { title: 'คลังกฎหมาย', sub: 'แยกตามหมวด' },
+const VIEW_TITLES: Record<string, { title: string; sub: string }> = {
+  '/dashboard': { title: 'Dashboard', sub: 'ภาพรวมระบบ' },
+  '/profile': { title: 'โปรไฟล์', sub: 'ข้อมูลผู้ใช้' },
+  '/upload': { title: 'อัปโหลด', sub: 'ตรวจสอบเอกสาร' },
+  '/documents': { title: 'คลังกฎหมาย', sub: 'แยกตามหมวด' },
+  '/settings': { title: 'ตั้งค่า', sub: 'หมวดหมู่เอกสาร' },
 }
 
-export function Header({ balance, userName, userRole, loading, onTopUp, activeView, onNavigate }: Props) {
+export function Header({ balance, userName, userRole, loading, onTopUp }: Props) {
+  const pathname = usePathname()
+  const { options } = useAppState()
   const roleLabels: Record<string, string> = {
     user: 'ผู้ใช้ทั่วไป',
     accountant: 'นักบัญชี',
     lawyer: 'ทนายความ',
     admin: 'ผู้ดูแลระบบ',
+    ...Object.fromEntries((options.role ?? []).map(o => [o.value, o.label])),
   }
-  const viewMeta = VIEW_TITLES[activeView]
+  const viewMeta = VIEW_TITLES[pathname] ?? { title: 'TaxLaw AI', sub: 'ระบบค้นหากฎหมายภาษี' }
 
   return (
     <header className="sticky top-0 z-30 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
@@ -39,8 +43,8 @@ export function Header({ balance, userName, userRole, loading, onTopUp, activeVi
         {/* Logo + current view (mobile shows logo + view title) */}
         <div className="flex items-center gap-3">
           {/* Mobile logo - tap to go dashboard */}
-          <button
-            onClick={() => onNavigate('dashboard')}
+          <Link
+            href="/dashboard"
             className="lg:hidden relative"
             aria-label="Go to dashboard"
           >
@@ -48,7 +52,7 @@ export function Header({ balance, userName, userRole, loading, onTopUp, activeVi
             <div className="relative p-1.5 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-700 text-white">
               <Scale className="h-5 w-5" />
             </div>
-          </button>
+          </Link>
 
           {/* Desktop logo */}
           <div className="hidden lg:flex items-center gap-2.5">
