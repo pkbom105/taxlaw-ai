@@ -4,7 +4,7 @@ import path from 'node:path'
 import { db } from '@/lib/db'
 
 // โฟลเดอร์ที่เก็บไฟล์ PDF ของคลัง (ให้บริการผ่าน /public)
-const BATCH_DIR = 'ิbook-pdf'
+const BATCH_DIR = 'book-pdf'
 
 // หาลิงก์เปิดไฟล์จากชื่อไฟล์ — ตรวจว่ามีไฟล์จริงใน public ก่อน
 function fileUrlFor(pdfFile: string | null): string | null {

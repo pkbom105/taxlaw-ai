@@ -1,6 +1,6 @@
 // OCR ไฟล์ PDF ที่ชั้นข้อความใช้ฟอนต์รหัสเก่า (แปลงเป็น Unicode ไม่ได้) ด้วย tesseract.js
 // ใช้: bun scripts/ocr-pdf.mjs <ไฟล์.pdf> [หน้าเริ่ม] [หน้าสุดท้าย] [ไฟล์ออก .txt]
-// ตัวอย่าง: bun scripts/ocr-pdf.mjs "public/ิbook-pdf/พระราชบัญญัติ งบประมาณ 2570-1.pdf" 1 20 /tmp/ocr-2570.txt
+// ตัวอย่าง: bun scripts/ocr-pdf.mjs "public/book-pdf/พระราชบัญญัติ งบประมาณ 2570-1.pdf" 1 20 /tmp/ocr-2570.txt
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'

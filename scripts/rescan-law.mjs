@@ -10,7 +10,7 @@ import { extractLawWithAi } from '../src/lib/ai-doc.ts'
 import { extractTextFromBuffer } from '../src/lib/doc-text.ts'
 
 const db = new PrismaClient()
-const DIR = process.env.DIR || 'public/ิbook-pdf'
+const DIR = process.env.DIR || 'public/book-pdf'
 const WINDOW = Number(process.env.WINDOW || 9000)
 const OVERLAP = Number(process.env.OVERLAP || 400)
 const MAX_WINDOWS = Number(process.env.MAX_WINDOWS || 8)

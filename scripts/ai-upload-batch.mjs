@@ -1,5 +1,5 @@
 // อัปโหลด PDF ทั้งโฟลเดอร์เข้าคลังกฎหมาย โดยให้ AI แยกหมวดหมู่ + สกัดมาตรา
-// ใช้: bun scripts/ai-upload-batch.mjs [โฟลเดอร์]        (ค่าเริ่มต้น public/ิbook-pdf)
+// ใช้: bun scripts/ai-upload-batch.mjs [โฟลเดอร์]        (ค่าเริ่มต้น public/book-pdf)
 // ตัวเลือก: LIMIT=5 จำกัดจำนวนไฟล์ · DELAY_MS=1500 หน่วงระหว่างไฟล์ · DRY_RUN=1 ดูรายการก่อน
 import fs from 'node:fs'
 import path from 'node:path'
@@ -7,7 +7,7 @@ import { PrismaClient } from '@prisma/client'
 
 const db = new PrismaClient()
 const API = process.env.API_BASE || 'http://localhost:3000'
-const DIR = process.argv[2] || process.env.DIR || 'public/ิbook-pdf'
+const DIR = process.argv[2] || process.env.DIR || 'public/book-pdf'
 const LIMIT = Number(process.env.LIMIT || 0)
 const DELAY_MS = Number(process.env.DELAY_MS || 1500)
 const DRY_RUN = process.env.DRY_RUN === '1'

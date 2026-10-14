@@ -8,7 +8,7 @@ import { askAiJson, getAiConfig } from '../src/lib/ai-call.ts'
 import { extractTextFromBuffer } from '../src/lib/doc-text.ts'
 
 const db = new PrismaClient()
-const DIR = process.argv[2] || process.env.DIR || 'public/ิbook-pdf'
+const DIR = process.argv[2] || process.env.DIR || 'public/book-pdf'
 const HEAD_CHARS = Number(process.env.HEAD_CHARS || 6000)
 const TH_MIN = Number(process.env.TH_MIN || 50)
 
